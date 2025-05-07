@@ -1,0 +1,68 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team User List</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+                "firebase/database": "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Selecione a Equipe</h1>
+        <div class="team-selection" id="teamSelection">
+            <!-- Team buttons will be populated here by script.js -->
+        </div>
+
+        <div class="user-list-container">
+            <h2 id="userListTitle">Selecione uma equipe para ver os usuários</h2>
+            <ul id="userList">
+                <!-- Users will be displayed here -->
+            </ul>
+        </div>
+
+        <div class="schedule-input-container" id="scheduleInputContainer">
+            <div class="section-header">
+                <h2>Gerar Escala para a Equipe</h2>
+                <button id="toggleScheduleSection" class="toggle-button">−</button>
+            </div>
+            <div class="date-inputs">
+                <label for="startDate">Data Inicial:</label>
+                <input type="date" id="startDate">
+                <label for="endDate">Data Final:</label>
+                <input type="date" id="endDate">
+            </div>
+            <div class="limit-inputs">
+                <label for="maxWeekdays">Máx Dias Semana:</label>
+                <input type="number" id="maxWeekdays" value="5" min="0">
+                <label for="maxWeekends">Máx Dias Fim Semana:</label>
+                <input type="number" id="maxWeekends" value="2" min="0">
+            </div>
+            <div class="calendar-container" id="calendarContainer">
+                <!-- Calendar will be displayed here -->
+            </div>
+            <div class="schedule-buttons"> 
+                 <button id="generateScheduleButton">Gerar Escala</button>
+                 <button id="saveScheduleButton">Salvar Escala</button> 
+                 <button id="resetScheduleButton">Reset Escala</button> 
+                 <button id="pdfScheduleButton">Escala PDF</button>
+            </div>
+        </div>
+
+        <div class="generated-schedule-container">
+            <h2 id="generatedScheduleTitle" style="display: none;">Escala Gerada</h2>
+            <ul id="generatedScheduleList">
+                <!-- Generated schedule will be displayed here -->
+            </ul>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
