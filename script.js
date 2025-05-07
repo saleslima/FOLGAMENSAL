@@ -45,6 +45,7 @@ let currentUserIndex = 0;
 let scheduleVacancies = {};
 let scheduleAssignments = {};
 let currentSelectedTeam = null;
+let scheduleExpanded = true; // Default state is expanded
 
 // Function to display team buttons
 function displayTeamButtons() {
@@ -209,7 +210,8 @@ async function saveSchedule() {
         selectedDays: selectedScaleDays,
         currentUserIndex: currentUserIndex,
         maxWeekdays: parseInt(maxWeekdaysInput.value, 10) || 0,
-        maxWeekends: parseInt(maxWeekendsInput.value, 10) || 0
+        maxWeekends: parseInt(maxWeekendsInput.value, 10) || 0,
+        expanded: scheduleExpanded // Save the expanded state
     };
 
     try {
@@ -243,6 +245,10 @@ async function loadSchedule(team) {
                 // Update max inputs if they were saved
                 if (savedData.maxWeekdays) maxWeekdaysInput.value = savedData.maxWeekdays;
                 if (savedData.maxWeekends) maxWeekendsInput.value = savedData.maxWeekends;
+                
+                // Set expanded state from saved data
+                scheduleExpanded = savedData.expanded !== undefined ? savedData.expanded : true;
+                updateSectionVisibility(); // Update UI based on expanded state
                 
                 // Generate calendar to reflect selected days
                 generateCalendar();
@@ -736,7 +742,7 @@ function generatePDF() {
 
 // Add toggle function for schedule section
 function toggleScheduleSection() {
-    // New password check
+    // Check if team is selected
     if (!currentSelectedTeam) {
         alert("Selecione uma equipe primeiro.");
         return;
@@ -751,17 +757,27 @@ function toggleScheduleSection() {
         return;
     }
     
+    // Toggle the expanded state
+    scheduleExpanded = !scheduleExpanded;
+    updateSectionVisibility();
+    
+    // If we have a team selected, save the state to preserve it on reload
+    if (currentSelectedTeam) {
+        saveSchedule().catch(error => {
+            console.error("Erro ao salvar estado expandido:", error);
+        });
+    }
+}
+
+// New function to update visibility based on expanded state
+function updateSectionVisibility() {
     const inputs = scheduleInputContainer.querySelectorAll('.date-inputs, .limit-inputs, .calendar-container, .schedule-buttons');
     
     inputs.forEach(element => {
-        if (element.style.display === 'none') {
-            element.style.display = '';
-            toggleScheduleSectionButton.textContent = '−';
-        } else {
-            element.style.display = 'none';
-            toggleScheduleSectionButton.textContent = '+';
-        }
+        element.style.display = scheduleExpanded ? '' : 'none';
     });
+    
+    toggleScheduleSectionButton.textContent = scheduleExpanded ? '−' : '+';
 }
 
 // --- Event Listeners ---
