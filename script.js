@@ -853,8 +853,9 @@ function openExceptionModal() {
     selectedScaleDays.sort((a, b) => new Date(a) - new Date(b));
     selectedScaleDays.forEach(dateStr => {
         const date = new Date(dateStr + 'T00:00:00');
+        // Simplified date format for mobile
         const dateDisplay = date.toLocaleDateString('pt-BR', { 
-            weekday: 'long', 
+            weekday: 'short', // Shortened weekday name for mobile
             month: 'short', 
             day: 'numeric' 
         });
@@ -867,6 +868,9 @@ function openExceptionModal() {
     
     // Show modal
     exceptionModal.style.display = 'block';
+    
+    // Scroll to modal for mobile
+    exceptionModal.scrollIntoView({ behavior: 'smooth' });
 }
 
 function closeExceptionModal() {
