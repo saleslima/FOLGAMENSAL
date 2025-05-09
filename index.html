@@ -4,6 +4,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Team User List</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="COPOM-OFF">
     <script type="importmap">
         {
             "imports": {
@@ -43,6 +50,10 @@
                 <input type="number" id="maxWeekdays" value="5" min="0">
                 <label for="maxWeekends">Máx Dias Fim Semana:</label>
                 <input type="number" id="maxWeekends" value="2" min="0">
+            </div>
+            <div class="auto-schedule-toggle">
+                <label for="useAutoSchedule">Usar Escala Automática:</label>
+                <input type="checkbox" id="useAutoSchedule">
             </div>
             <div class="calendar-container" id="calendarContainer">
                 <!-- Calendar will be displayed here -->

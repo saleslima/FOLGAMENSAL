@@ -153,6 +153,28 @@ h1, h2 {
     width: 60px;
 }
 
+.auto-schedule-toggle {
+    display: flex;
+    align-items: center;
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #f4f9ff;
+    border-radius: 5px;
+    border: 1px solid #d0e3ff;
+}
+
+.auto-schedule-toggle label {
+    font-weight: bold;
+    color: #555;
+    margin-right: 10px;
+}
+
+.auto-schedule-toggle input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
 .calendar-container {
     margin-top: 20px;
     margin-bottom: 20px;
@@ -370,7 +392,7 @@ h1, h2 {
         font-size: 1em;
     }
     
-    .date-inputs, .limit-inputs {
+    .date-inputs, .limit-inputs, .auto-schedule-toggle {
         flex-direction: row;
         align-items: center;
     }

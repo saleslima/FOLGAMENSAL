@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, query, orderByChild, equalTo, onValue, set, get, remove } from "firebase/database";
+import { equipes, ehDiaDeTrabalho, formatDateYMD } from "./schedule-generator.js";
 
 // Firebase configuration from the user
 const firebaseConfig = {
@@ -38,6 +39,9 @@ const generatedScheduleListUl = document.getElementById('generatedScheduleList')
 const toggleScheduleSectionButton = document.getElementById('toggleScheduleSection');
 const scheduleInputContainer = document.getElementById('scheduleInputContainer');
 
+// New element added from the plan
+const useAutoScheduleCheckbox = document.getElementById('useAutoSchedule');
+
 // State variables
 let selectedScaleDays = [];
 let currentTeamUsers = [];
@@ -72,6 +76,9 @@ function selectTeam(team, clickedButton) {
     currentUserIndex = 0;
     removeUserHighlight();
     resetScheduleUI(); // Reset generated schedule UI state
+
+    // After resetting the UI, regenerate the calendar with team's schedule
+    generateCalendar();
 
     const usersRef = ref(database, 'usuarios');
     const teamQuery = query(usersRef, orderByChild('equipe'), equalTo(team));
@@ -433,7 +440,14 @@ function generateCalendar() {
                 dayElement.style.pointerEvents = 'none'; 
             } else {
                 dayElement.addEventListener('click', () => handleDayClick(formattedDate, dayElement));
-                if (selectedScaleDays.includes(formattedDate)) {
+                
+                // Highlight days based on team schedule
+                if (currentSelectedTeam && ehDiaDeTrabalho(currentSelectedTeam, dateOnly)) {
+                    dayElement.classList.add('selected');
+                    if (!selectedScaleDays.includes(formattedDate)) {
+                        selectedScaleDays.push(formattedDate);
+                    }
+                } else if (selectedScaleDays.includes(formattedDate)) {
                     dayElement.classList.add('selected');
                 }
             }
@@ -793,6 +807,17 @@ saveScheduleButton.addEventListener('click', saveSchedule);
 resetScheduleButton.addEventListener('click', resetSchedule);
 pdfScheduleButton.addEventListener('click', generatePDF);
 toggleScheduleSectionButton.addEventListener('click', toggleScheduleSection);
+
+useAutoScheduleCheckbox.addEventListener('change', function() {
+    if (currentSelectedTeam) {
+        // Reset selected days when toggling auto-schedule
+        selectedScaleDays = [];
+        generateCalendar();
+    } else {
+        alert("Selecione uma equipe primeiro antes de usar a escala automática.");
+        useAutoScheduleCheckbox.checked = false;
+    }
+});
 
 // Initialize the page
 displayTeamButtons();
