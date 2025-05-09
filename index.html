@@ -36,7 +36,7 @@
 
         <div class="schedule-input-container" id="scheduleInputContainer">
             <div class="section-header">
-                <h2>Gerar Escala para a Equipe</h2>
+                <h2>Gerar Escala para a Equipe <span id="scheduleInfo" class="section-info"></span></h2>
                 <button id="toggleScheduleSection" class="toggle-button">−</button>
             </div>
             <div class="date-inputs">
@@ -63,6 +63,7 @@
                  <button id="saveScheduleButton">Salvar Escala</button> 
                  <button id="resetScheduleButton">Reset Escala</button> 
                  <button id="pdfScheduleButton">Escala PDF</button>
+                 <button id="exceptionButton">Exceção</button>
             </div>
         </div>
 
@@ -71,6 +72,33 @@
             <ul id="generatedScheduleList">
                 <!-- Generated schedule will be displayed here -->
             </ul>
+        </div>
+    </div>
+
+    <div id="exceptionModal" class="exception-modal">
+        <div class="exception-modal-content">
+            <div class="exception-modal-header">
+                <h3>Gerenciar Exceções de Escala</h3>
+                <span class="close-modal" id="closeModal">&times;</span>
+            </div>
+            <div class="exception-form">
+                <div class="form-group">
+                    <label for="exceptionDate">Selecione a Data:</label>
+                    <select id="exceptionDate"></select>
+                </div>
+                <div class="form-group">
+                    <label for="vacancyAction">Ação:</label>
+                    <select id="vacancyAction">
+                        <option value="add">Adicionar Vaga</option>
+                        <option value="remove">Remover Vaga</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="vacancyCount">Quantidade:</label>
+                    <input type="number" id="vacancyCount" min="1" value="1">
+                </div>
+                <button id="applyException">Aplicar Exceção</button>
+            </div>
         </div>
     </div>
 

@@ -21,6 +21,16 @@ const teams = ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO'];
 const teamSelectionDiv = document.getElementById('teamSelection');
 const userListUl = document.getElementById('userList');
 const userListTitle = document.getElementById('userListTitle');
+const generatedScheduleTitle = document.getElementById('generatedScheduleTitle');
+const generatedScheduleListUl = document.getElementById('generatedScheduleList');
+const scheduleInfoSpan = document.getElementById('scheduleInfo');
+const exceptionButton = document.getElementById('exceptionButton');
+const exceptionModal = document.getElementById('exceptionModal');
+const closeModal = document.getElementById('closeModal');
+const exceptionDateSelect = document.getElementById('exceptionDate');
+const vacancyActionSelect = document.getElementById('vacancyAction');
+const vacancyCountInput = document.getElementById('vacancyCount');
+const applyExceptionButton = document.getElementById('applyException');
 
 // New DOM elements for scheduling
 const startDateInput = document.getElementById('startDate');
@@ -32,14 +42,8 @@ const generateScheduleButton = document.getElementById('generateScheduleButton')
 const saveScheduleButton = document.getElementById('saveScheduleButton');
 const resetScheduleButton = document.getElementById('resetScheduleButton');
 const pdfScheduleButton = document.getElementById('pdfScheduleButton');
-const generatedScheduleTitle = document.getElementById('generatedScheduleTitle');
-const generatedScheduleListUl = document.getElementById('generatedScheduleList');
-
-// Add toggle section button element
 const toggleScheduleSectionButton = document.getElementById('toggleScheduleSection');
 const scheduleInputContainer = document.getElementById('scheduleInputContainer');
-
-// New element added from the plan
 const useAutoScheduleCheckbox = document.getElementById('useAutoSchedule');
 
 // State variables
@@ -50,6 +54,7 @@ let scheduleVacancies = {};
 let scheduleAssignments = {};
 let currentSelectedTeam = null;
 let scheduleExpanded = true; // Default state is expanded
+let reassignmentQueue = []; // Stores users who need to be reassigned due to vacancy reduction
 
 // Function to display team buttons
 function displayTeamButtons() {
@@ -171,6 +176,8 @@ function selectTeam(team, clickedButton) {
             loadSchedule(team);
             enableScheduleButtons();
 
+            updateScheduleInfo(); // Update the info display when a team is selected
+
         } else {
             userListUl.innerHTML = '<li>Nenhum usuário encontrado para esta equipe.</li>';
             disableScheduleButtons();
@@ -263,11 +270,14 @@ async function loadSchedule(team) {
                 // Display the saved schedule
                 displaySavedSchedule();
                 highlightCurrentUser();
+                
+                // Update schedule info after loading saved data
+                updateScheduleInfo();
 
             } else {
                 console.log(`Nenhuma escala salva encontrada para a equipe ${team}.`);
                 resetScheduleUI(); // Reset schedule state if no saved schedule is found
-                generateCalendar(); // Ensure calendar reflects current state
+                generateCalendar(); // Ensure calendar reflects current state (likely empty selected days)
             }
         }).catch(error => {
             console.error("Erro ao carregar escala:", error);
@@ -543,6 +553,25 @@ function generateSchedule() {
     // Reset to first user and highlight them
     currentUserIndex = 0;
     highlightCurrentUser();
+
+    updateScheduleInfo(); // Update the schedule info display
+}
+
+function updateScheduleInfo() {
+    if (currentTeamUsers.length > 0) {
+        const totalVacancies = Object.values(scheduleVacancies).reduce((sum, val) => sum + val, 0);
+        scheduleInfoSpan.textContent = `${currentTeamUsers.length} militares, ${totalVacancies} vagas`;
+        scheduleInfoSpan.style.display = 'inline';
+        
+        // Set color to red if there are fewer vacancies than users
+        if (totalVacancies < currentTeamUsers.length) {
+            scheduleInfoSpan.style.color = '#dc3545'; // Bootstrap danger red
+        } else {
+            scheduleInfoSpan.style.color = '#666'; // Reset to default color
+        }
+    } else {
+        scheduleInfoSpan.style.display = 'none';
+    }
 }
 
 function updateScheduleItemText(listItem, dateStr) {
@@ -595,6 +624,9 @@ function handleScheduleDayClick(dateStr, element) {
 
     if (scheduleVacancies[dateStr] > 0) {
         scheduleVacancies[dateStr]--;
+        if (!scheduleAssignments[dateStr]) {
+            scheduleAssignments[dateStr] = [];
+        }
         scheduleAssignments[dateStr].push(userName);
 
         updateScheduleItemText(element, dateStr);
@@ -607,6 +639,14 @@ function handleScheduleDayClick(dateStr, element) {
             element.classList.add('full');
             element.style.pointerEvents = 'none'; 
         }
+        
+        // Update schedule info after assignment
+        updateScheduleInfo();
+
+        // Automatically save the schedule after successful assignment
+        saveSchedule().catch(error => {
+            console.error("Erro ao salvar automaticamente após escolha:", error);
+        });
 
     } else {
         console.log(`No more vacancies for ${dateStr}`);
@@ -794,8 +834,144 @@ function updateSectionVisibility() {
     toggleScheduleSectionButton.textContent = scheduleExpanded ? '−' : '+';
 }
 
-// --- Event Listeners ---
+// Function to handle exceptions (add/remove vacancies)
+function openExceptionModal() {
+    if (!currentSelectedTeam) {
+        alert("Selecione uma equipe primeiro.");
+        return;
+    }
+    
+    if (selectedScaleDays.length === 0) {
+        alert("Gere uma escala primeiro antes de aplicar exceções.");
+        return;
+    }
+    
+    // Clear previous options
+    exceptionDateSelect.innerHTML = '';
+    
+    // Populate date dropdown
+    selectedScaleDays.sort((a, b) => new Date(a) - new Date(b));
+    selectedScaleDays.forEach(dateStr => {
+        const date = new Date(dateStr + 'T00:00:00');
+        const dateDisplay = date.toLocaleDateString('pt-BR', { 
+            weekday: 'long', 
+            month: 'short', 
+            day: 'numeric' 
+        });
+        
+        const option = document.createElement('option');
+        option.value = dateStr;
+        option.textContent = dateDisplay;
+        exceptionDateSelect.appendChild(option);
+    });
+    
+    // Show modal
+    exceptionModal.style.display = 'block';
+}
 
+function closeExceptionModal() {
+    exceptionModal.style.display = 'none';
+}
+
+function applyException() {
+    const dateStr = exceptionDateSelect.value;
+    const action = vacancyActionSelect.value;
+    const count = parseInt(vacancyCountInput.value, 10) || 1;
+    
+    if (!dateStr) {
+        alert("Selecione uma data válida.");
+        return;
+    }
+    
+    if (count <= 0) {
+        alert("A quantidade deve ser maior que zero.");
+        return;
+    }
+    
+    // Get current assignments for the date
+    const currentAssignments = scheduleAssignments[dateStr] || [];
+    
+    if (action === 'add') {
+        // Add vacancies
+        scheduleVacancies[dateStr] = (scheduleVacancies[dateStr] || 0) + count;
+    } else {
+        // Remove vacancies
+        const currentVacancies = scheduleVacancies[dateStr] || 0;
+        const newVacancyCount = Math.max(0, currentVacancies - count);
+        
+        // If we're reducing vacancies below the number of assigned users
+        if (newVacancyCount < currentAssignments.length) {
+            // Calculate how many users need to be reassigned
+            const reassignCount = currentAssignments.length - newVacancyCount;
+            
+            // Remove the most recently assigned users
+            const usersToReassign = currentAssignments.slice(-reassignCount);
+            
+            // Update assignments
+            scheduleAssignments[dateStr] = currentAssignments.slice(0, newVacancyCount);
+            
+            // Add removed users to reassignment queue
+            reassignmentQueue = reassignmentQueue.concat(usersToReassign);
+            
+            // Alert that users need to be reassigned
+            alert(`${reassignCount} militar(es) removido(s) da escala e precisam ser realocados: ${usersToReassign.join(', ')}`);
+        }
+        
+        scheduleVacancies[dateStr] = newVacancyCount;
+    }
+    
+    // Update UI
+    updateScheduleUI();
+    
+    // Handle reassignments if needed
+    processReassignmentQueue();
+    
+    // Update schedule info
+    updateScheduleInfo();
+    
+    // Automatically save the schedule after applying the exception
+    saveSchedule().catch(error => {
+        console.error("Erro ao salvar automaticamente após exceção:", error);
+    });
+    
+    // Close modal
+    closeExceptionModal();
+}
+
+function updateScheduleUI() {
+    // Update each schedule list item
+    generatedScheduleListUl.querySelectorAll('li').forEach(li => {
+        const dateStr = li.dataset.date;
+        if (dateStr) {
+            updateScheduleItemText(li, dateStr);
+        }
+    });
+}
+
+function processReassignmentQueue() {
+    if (reassignmentQueue.length > 0) {
+        // Find the names in the currentTeamUsers array
+        const usersToReassign = [];
+        reassignmentQueue.forEach(name => {
+            const userIndex = currentTeamUsers.findIndex(user => user.displayName === name);
+            if (userIndex >= 0) {
+                usersToReassign.push(userIndex);
+            }
+        });
+        
+        // Reset currentUserIndex to the first user needing reassignment
+        if (usersToReassign.length > 0) {
+            currentUserIndex = usersToReassign[0];
+            highlightCurrentUser();
+            enableScheduleClicks();
+            
+            // Clear the queue
+            reassignmentQueue = [];
+        }
+    }
+}
+
+// Event listeners
 startDateInput.addEventListener('change', generateCalendar);
 endDateInput.addEventListener('change', generateCalendar);
 
@@ -816,6 +992,17 @@ useAutoScheduleCheckbox.addEventListener('change', function() {
     } else {
         alert("Selecione uma equipe primeiro antes de usar a escala automática.");
         useAutoScheduleCheckbox.checked = false;
+    }
+});
+
+exceptionButton.addEventListener('click', openExceptionModal);
+closeModal.addEventListener('click', closeExceptionModal);
+applyExceptionButton.addEventListener('click', applyException);
+
+// Close modal if user clicks outside the modal content
+window.addEventListener('click', (event) => {
+    if (event.target === exceptionModal) {
+        closeExceptionModal();
     }
 });
 
