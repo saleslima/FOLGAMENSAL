@@ -2,7 +2,7 @@
   "name": "COPOM-OFF | Team User List",
   "short_name": "OFF",
   "description": "Team scheduling application",
-  "start_url": "/",
+  "start_url": "https://saleslima.github.io/FOLGAMENSAL/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
@@ -25,4 +25,3 @@
     }
   ]
 }
-
