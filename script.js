@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, query, orderByChild, equalTo, onValue, set, get, remove } from "firebase/database";
 import { equipes, ehDiaDeTrabalho, formatDateYMD } from "./schedule-generator.js";
+import { isHoliday, isWeekend, getHolidayName } from "./holidays.js";
 
 // Firebase configuration from the user
 const firebaseConfig = {
@@ -45,6 +46,52 @@ const pdfScheduleButton = document.getElementById('pdfScheduleButton');
 const toggleScheduleSectionButton = document.getElementById('toggleScheduleSection');
 const scheduleInputContainer = document.getElementById('scheduleInputContainer');
 const useAutoScheduleCheckbox = document.getElementById('useAutoSchedule');
+const newScheduleButton = document.getElementById('newScheduleButton');
+
+const viewSavedSchedulesButton = document.getElementById('viewSavedSchedulesButton');
+
+// Add to Home Screen functionality
+let deferredPrompt;
+const addToHomeButton = document.getElementById('addToHomeButton');
+
+// Hide button initially
+addToHomeButton.style.display = 'none';
+
+// Detect when PWA install is available
+window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent Chrome 67 and earlier from automatically showing the prompt
+    e.preventDefault();
+    // Stash the event so it can be triggered later
+    deferredPrompt = e;
+    // Show the button
+    addToHomeButton.style.display = 'flex';
+});
+
+// Add click handler for the button
+addToHomeButton.addEventListener('click', async () => {
+    if (!deferredPrompt) {
+        // If app is already installed or not installable, offer manual instructions
+        alert('Para adicionar à tela inicial: \n\n' +
+              'iOS: Use o botão "Compartilhar" e depois "Adicionar à Tela de Início"\n\n' +
+              'Android: Use o menu do navegador e "Adicionar à Tela Inicial"');
+        return;
+    }
+    
+    // Show the install prompt
+    deferredPrompt.prompt();
+    // Wait for the user to respond to the prompt
+    const choiceResult = await deferredPrompt.userChoice;
+    
+    // Reset the deferred prompt variable
+    deferredPrompt = null;
+    // Hide the button
+    addToHomeButton.style.display = 'none';
+});
+
+// Hide button when app is installed
+window.addEventListener('appinstalled', (evt) => {
+    addToHomeButton.style.display = 'none';
+});
 
 // State variables
 let selectedScaleDays = [];
@@ -225,10 +272,21 @@ async function saveSchedule() {
         currentUserIndex: currentUserIndex,
         maxWeekdays: parseInt(maxWeekdaysInput.value, 10) || 0,
         maxWeekends: parseInt(maxWeekendsInput.value, 10) || 0,
-        expanded: scheduleExpanded // Save the expanded state
+        expanded: scheduleExpanded, // Save the expanded state
+        savedDate: new Date().toISOString() // Add timestamp when saved
     };
 
     try {
+        // Check if we should save as a completed schedule
+        const isCompleted = currentUserIndex >= currentTeamUsers.length;
+        
+        if (isCompleted) {
+            // This is a completed schedule - save to archive
+            await saveScheduleToArchive(scheduleData);
+            console.log(`Escala completa para ${currentSelectedTeam} arquivada com sucesso!`);
+        }
+        
+        // Always save as current schedule
         await set(ref(database, `schedules/${currentSelectedTeam}`), scheduleData);
         console.log(`Escala para ${currentSelectedTeam} salva com sucesso!`);
         alert("Escala salva com sucesso!");
@@ -236,6 +294,69 @@ async function saveSchedule() {
         console.error("Erro ao salvar escala:", error);
         alert(`Erro ao salvar escala: ${error.message}`);
     }
+}
+
+// New function to save completed schedule to archive
+async function saveScheduleToArchive(scheduleData) {
+    // Get the date range for naming
+    const startDate = new Date(startDateInput.value);
+    const endDate = new Date(endDateInput.value);
+    const scheduleName = `${formatDateForFilename(startDate)}A${formatDateForFilename(endDate)}_${currentSelectedTeam.toUpperCase()}`;
+    
+    // Reference to the team's schedule archive
+    const archiveRef = ref(database, `scheduleArchive/${currentSelectedTeam}`);
+    
+    try {
+        // Get current archive
+        const snapshot = await get(archiveRef);
+        let archive = {};
+        
+        if (snapshot.exists()) {
+            archive = snapshot.val();
+        }
+        
+        // Add new schedule with timestamp
+        scheduleData.scheduleName = scheduleName;
+        scheduleData.archivedAt = new Date().toISOString();
+        
+        // Convert archive to array, add new item, sort by archived date
+        let archiveArray = Object.entries(archive).map(([key, value]) => ({ key, ...value }));
+        archiveArray.push({ key: scheduleName, ...scheduleData });
+        
+        // Sort by archived date (newest first)
+        archiveArray.sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
+        
+        // Keep only the 10 most recent
+        if (archiveArray.length > 10) {
+            console.log(`Removing oldest schedule: ${archiveArray[10].scheduleName}`);
+            archiveArray = archiveArray.slice(0, 10);
+        }
+        
+        // Convert back to object
+        const newArchive = {};
+        archiveArray.forEach(item => {
+            const { key, ...data } = item;
+            newArchive[key] = data;
+        });
+        
+        // Save updated archive
+        await set(archiveRef, newArchive);
+    } catch (error) {
+        console.error("Error saving to archive:", error);
+        throw error;
+    }
+}
+
+// Format date for filename using the specific format
+function formatDateForFilename(dateObj) {
+    const day = dateObj.getDate().toString().padStart(2, '0');
+    // Get first 3 letters of month name in Portuguese (uppercase)
+    const monthNames = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 
+                        'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const month = monthNames[dateObj.getMonth()];
+    // Get last 2 digits of year
+    const year = dateObj.getFullYear().toString().slice(-2);
+    return `${day}${month}${year}`;
 }
 
 async function loadSchedule(team) {
@@ -257,8 +378,16 @@ async function loadSchedule(team) {
                 currentUserIndex = savedData.currentUserIndex || 0;
                 
                 // Update max inputs if they were saved
-                if (savedData.maxWeekdays) maxWeekdaysInput.value = savedData.maxWeekdays;
-                if (savedData.maxWeekends) maxWeekendsInput.value = savedData.maxWeekends;
+                if (savedData.maxWeekdays !== undefined) maxWeekdaysInput.value = savedData.maxWeekdays;
+                if (savedData.maxWeekends !== undefined) maxWeekendsInput.value = savedData.maxWeekends;
+                
+                // Set date fields if available in the saved schedule
+                if (selectedScaleDays && selectedScaleDays.length > 0) {
+                    // Sort the days to get first and last
+                    const sortedDays = [...selectedScaleDays].sort();
+                    startDateInput.value = sortedDays[0];
+                    endDateInput.value = sortedDays[sortedDays.length - 1];
+                }
                 
                 // Set expanded state from saved data
                 scheduleExpanded = savedData.expanded !== undefined ? savedData.expanded : true;
@@ -308,6 +437,18 @@ function displaySavedSchedule() {
     selectedScaleDays.forEach(dateStr => {
         const listItem = document.createElement('li');
         listItem.dataset.date = dateStr;
+        
+        // Add holiday or weekend highlighting
+        const date = new Date(dateStr + 'T00:00:00');
+        if (isWeekend(date) || isHoliday(date)) {
+            listItem.classList.add('holiday-date');
+            
+            // Add tooltip for holidays
+            const holidayName = getHolidayName(date);
+            if (holidayName) {
+                listItem.title = holidayName;
+            }
+        }
         
         const vacancies = scheduleVacancies[dateStr] || 0;
         
@@ -454,11 +595,34 @@ function generateCalendar() {
                 // Highlight days based on team schedule
                 if (currentSelectedTeam && ehDiaDeTrabalho(currentSelectedTeam, dateOnly)) {
                     dayElement.classList.add('selected');
+                    
+                    // Add holiday or weekend highlighting
+                    if (isHoliday(dateOnly) || isWeekend(dateOnly)) {
+                        dayElement.classList.add('holiday');
+                        
+                        // Add tooltip for holidays
+                        const holidayName = getHolidayName(dateOnly);
+                        if (holidayName) {
+                            dayElement.title = holidayName;
+                        }
+                    }
+                    
                     if (!selectedScaleDays.includes(formattedDate)) {
                         selectedScaleDays.push(formattedDate);
                     }
                 } else if (selectedScaleDays.includes(formattedDate)) {
                     dayElement.classList.add('selected');
+                    
+                    // Add holiday or weekend highlighting for manually selected days too
+                    if (isHoliday(dateOnly) || isWeekend(dateOnly)) {
+                        dayElement.classList.add('holiday');
+                        
+                        // Add tooltip for holidays
+                        const holidayName = getHolidayName(dateOnly);
+                        if (holidayName) {
+                            dayElement.title = holidayName;
+                        }
+                    }
                 }
             }
 
@@ -506,7 +670,7 @@ function generateSchedule() {
         removeUserHighlight();
         return;
     }
-
+    
     if (currentTeamUsers.length === 0) {
         generatedScheduleListUl.innerHTML = '<li>Selecione uma equipe com usuários para gerar a escala.</li>';
         removeUserHighlight();
@@ -528,14 +692,25 @@ function generateSchedule() {
         const date = new Date(dateStr + 'T00:00:00');
         const dayOfWeek = date.getUTCDay(); 
 
-        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-        const vacancyLimit = isWeekend ? maxWeekends : maxWeekdays;
+        const isWeekendOrHoliday = isWeekend(date) || isHoliday(date);
+        const vacancyLimit = isWeekendOrHoliday ? maxWeekends : maxWeekdays;
 
         scheduleVacancies[dateStr] = vacancyLimit;
         scheduleAssignments[dateStr] = scheduleAssignments[dateStr] || [];
 
         const listItem = document.createElement('li');
         listItem.dataset.date = dateStr; 
+        
+        // Add holiday or weekend highlighting class
+        if (isWeekendOrHoliday) {
+            listItem.classList.add('holiday-date');
+            
+            // Add tooltip for holidays
+            const holidayName = getHolidayName(date);
+            if (holidayName) {
+                listItem.title = holidayName;
+            }
+        }
 
         if (vacancyLimit <= 0) {
             listItem.classList.add('full'); 
@@ -543,7 +718,7 @@ function generateSchedule() {
         } else {
             listItem.addEventListener('click', () => handleScheduleDayClick(dateStr, listItem));
         }
-
+        
         updateScheduleItemText(listItem, dateStr); 
         generatedScheduleListUl.appendChild(listItem);
     });
@@ -555,47 +730,11 @@ function generateSchedule() {
     highlightCurrentUser();
 
     updateScheduleInfo(); // Update the schedule info display
-}
-
-function updateScheduleInfo() {
-    if (currentTeamUsers.length > 0) {
-        const totalVacancies = Object.values(scheduleVacancies).reduce((sum, val) => sum + val, 0);
-        scheduleInfoSpan.textContent = `${currentTeamUsers.length} militares, ${totalVacancies} vagas`;
-        scheduleInfoSpan.style.display = 'inline';
-        
-        // Set color to red if there are fewer vacancies than users
-        if (totalVacancies < currentTeamUsers.length) {
-            scheduleInfoSpan.style.color = '#dc3545'; // Bootstrap danger red
-        } else {
-            scheduleInfoSpan.style.color = '#666'; // Reset to default color
-        }
-    } else {
-        scheduleInfoSpan.style.display = 'none';
-    }
-}
-
-function updateScheduleItemText(listItem, dateStr) {
-    const date = new Date(dateStr + 'T00:00:00'); 
-    const dateDisplay = date.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const remainingVacancies = scheduleVacancies[dateStr];
-    const assignments = scheduleAssignments[dateStr] || [];
-
-    let text = `${dateDisplay}: ${remainingVacancies} vaga${remainingVacancies !== 1 ? 's' : ''}`;
-
-    if (assignments.length > 0) {
-        const assignedNames = assignments.map(name => `<strong>${name}</strong>`).join(', ');
-        text += ` (${assignedNames})`;
-    }
-
-    listItem.innerHTML = text; 
-
-    if (remainingVacancies <= 0) {
-        listItem.classList.add('full');
-        listItem.classList.remove('disabled'); 
-        listItem.style.pointerEvents = 'none'; 
-    } else {
-        listItem.classList.remove('full');
-    }
+    
+    // Automatically save the generated schedule
+    saveSchedule().catch(error => {
+        console.error("Erro ao salvar automaticamente após gerar escala:", error);
+    });
 }
 
 function handleScheduleDayClick(dateStr, element) {
@@ -652,6 +791,48 @@ function handleScheduleDayClick(dateStr, element) {
         console.log(`No more vacancies for ${dateStr}`);
         element.classList.add('full'); 
         element.style.pointerEvents = 'none';
+    }
+}
+
+function updateScheduleInfo() {
+    if (currentTeamUsers.length > 0) {
+        const totalVacancies = Object.values(scheduleVacancies).reduce((sum, val) => sum + val, 0);
+        const remainingUsers = currentTeamUsers.length - currentUserIndex;
+        scheduleInfoSpan.textContent = `${remainingUsers} militares, ${totalVacancies} vagas`;
+        scheduleInfoSpan.style.display = 'inline';
+        
+        // Set color to red if there are fewer vacancies than remaining users
+        if (totalVacancies < remainingUsers) {
+            scheduleInfoSpan.style.color = '#dc3545'; // Bootstrap danger red
+        } else {
+            scheduleInfoSpan.style.color = '#666'; // Reset to default color
+        }
+    } else {
+        scheduleInfoSpan.style.display = 'none';
+    }
+}
+
+function updateScheduleItemText(listItem, dateStr) {
+    const date = new Date(dateStr + 'T00:00:00'); 
+    const dateDisplay = date.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const remainingVacancies = scheduleVacancies[dateStr];
+    const assignments = scheduleAssignments[dateStr] || [];
+
+    let text = `${dateDisplay}: ${remainingVacancies} vaga${remainingVacancies !== 1 ? 's' : ''}`;
+
+    if (assignments.length > 0) {
+        const assignedNames = assignments.map(name => `<strong>${name}</strong>`).join(', ');
+        text += ` (${assignedNames})`;
+    }
+
+    listItem.innerHTML = text; 
+
+    if (remainingVacancies <= 0) {
+        listItem.classList.add('full');
+        listItem.classList.remove('disabled'); 
+        listItem.style.pointerEvents = 'none'; 
+    } else {
+        listItem.classList.remove('full');
     }
 }
 
@@ -788,8 +969,27 @@ function generatePDF() {
                 angle: -45
             });
             
-            // Save PDF
-            doc.save(`escala_equipe_${currentSelectedTeam}.pdf`);
+            // Format filename based on date range (e.g., 10jun25a10jul25)
+            const formatDateForFilename = (dateStr) => {
+                const date = new Date(dateStr);
+                const day = date.getDate().toString().padStart(2, '0');
+                // Get first 3 letters of month name in Portuguese
+                const monthNames = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 
+                                    'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+                const month = monthNames[date.getMonth()];
+                // Get last 2 digits of year
+                const year = date.getFullYear().toString().slice(-2);
+                return `${day}${month}${year}`;
+            };
+            
+            // Get date objects from input fields
+            const startDate = new Date(startDateInput.value);
+            const endDate = new Date(endDateInput.value);
+            
+            const fileName = `${formatDateForFilename(startDate)}A${formatDateForFilename(endDate)}_${currentSelectedTeam.toUpperCase()}`;
+            
+            // Save PDF with the formatted filename
+            doc.save(`${fileName}.pdf`);
         };
     };
 }
@@ -975,6 +1175,266 @@ function processReassignmentQueue() {
     }
 }
 
+// Create a new schedule while saving the current one
+async function createNewSchedule() {
+    if (!currentSelectedTeam) {
+        alert("Selecione uma equipe primeiro.");
+        return;
+    }
+    
+    // Check if there are users who haven't made their selections yet
+    const remainingUsers = currentTeamUsers.length - currentUserIndex;
+    if (remainingUsers > 0) {
+        const confirmMessage = `Ainda falta(m) ${remainingUsers} militar(es) para escolher seu(s) dia(s). Deseja fechar esta escala e gerar uma nova?`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+    }
+    
+    try {
+        // First save the current schedule
+        await saveSchedule();
+        
+        // Reset the UI and state for a new schedule
+        resetScheduleUI();
+        
+        // Clear but maintain the input fields
+        const startDateValue = startDateInput.value;
+        const endDateValue = endDateInput.value;
+        const maxWeekdaysValue = maxWeekdaysInput.value;
+        const maxWeekendsValue = maxWeekendsInput.value;
+        
+        // Generate a fresh calendar
+        generateCalendar();
+        
+        alert("Nova escala iniciada. A escala anterior foi salva automaticamente.");
+    } catch (error) {
+        console.error("Erro ao criar nova escala:", error);
+        alert(`Erro ao criar nova escala: ${error.message}`);
+    }
+}
+
+// Function to open the saved schedules modal
+function viewSavedSchedules() {
+    if (!currentSelectedTeam) {
+        alert("Selecione uma equipe primeiro.");
+        return;
+    }
+    
+    // Create modal if it doesn't exist
+    if (!document.getElementById('savedSchedulesModal')) {
+        createSavedSchedulesModal();
+    }
+    
+    // Show modal
+    const savedSchedulesModal = document.getElementById('savedSchedulesModal');
+    savedSchedulesModal.style.display = 'block';
+    
+    // Populate with saved schedules
+    loadSavedSchedules();
+}
+
+// Function to create saved schedules modal
+function createSavedSchedulesModal() {
+    const modal = document.createElement('div');
+    modal.id = 'savedSchedulesModal';
+    modal.classList.add('saved-schedules-modal');
+    
+    modal.innerHTML = `
+        <div class="saved-schedules-content">
+            <div class="saved-schedules-header">
+                <h3>Escalas Fechadas - ${currentSelectedTeam}</h3>
+                <span class="close-modal" id="closeSavedSchedulesModal">&times;</span>
+            </div>
+            <div class="schedules-list" id="schedulesList">
+                <p class="no-schedules">Carregando escalas...</p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Add event listener to close button
+    document.getElementById('closeSavedSchedulesModal').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Close modal if user clicks outside
+    window.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+}
+
+// Function to load saved schedules for current team
+function loadSavedSchedules() {
+    const schedulesList = document.getElementById('schedulesList');
+    schedulesList.innerHTML = '<p class="no-schedules">Carregando escalas...</p>';
+    
+    // Reference to saved schedules archive for the team
+    const archiveRef = ref(database, `scheduleArchive/${currentSelectedTeam}`);
+    
+    get(archiveRef).then((snapshot) => {
+        if (snapshot.exists()) {
+            const archives = snapshot.val();
+            
+            // Create HTML for each saved schedule
+            let schedulesHTML = '';
+            Object.entries(archives).forEach(([key, schedule]) => {
+                let statusDisplay;
+                
+                // Format the dates for display
+                const firstDate = schedule.selectedDays ? new Date(schedule.selectedDays[0] + 'T00:00:00') : null;
+                const lastDate = schedule.selectedDays ? new Date(schedule.selectedDays[schedule.selectedDays.length - 1] + 'T00:00:00') : null;
+                
+                let dateRangeDisplay = 'Data não disponível';
+                if (firstDate && lastDate) {
+                    dateRangeDisplay = `${firstDate.toLocaleDateString('pt-BR')} a ${lastDate.toLocaleDateString('pt-BR')}`;
+                }
+                
+                schedulesHTML += `
+                    <div class="schedule-item" data-schedule-key="${key}">
+                        <strong>${schedule.scheduleName || key}</strong>
+                        <div>${dateRangeDisplay}</div>
+                        <div class="archive-date">Arquivado em: ${new Date(schedule.archivedAt).toLocaleDateString('pt-BR')}</div>
+                    </div>
+                `;
+            });
+            
+            // Also check for current schedule
+            const currentScheduleRef = ref(database, `schedules/${currentSelectedTeam}`);
+            get(currentScheduleRef).then((currentSnapshot) => {
+                if (currentSnapshot.exists()) {
+                    const currentData = currentSnapshot.val();
+                    const isCompleted = currentData.currentUserIndex >= currentTeamUsers.length;
+                    
+                    // Get the date range for the current schedule
+                    let dateRangeText = 'Datas não disponíveis';
+                    if (currentData.selectedDays && currentData.selectedDays.length > 0) {
+                        const firstDate = new Date(currentData.selectedDays[0] + 'T00:00:00');
+                        const lastDate = new Date(currentData.selectedDays[currentData.selectedDays.length - 1] + 'T00:00:00');
+                        dateRangeText = `${firstDate.toLocaleDateString('pt-BR')} a ${lastDate.toLocaleDateString('pt-BR')}`;
+                    }
+                    
+                    schedulesHTML = `
+                        <div class="schedule-item current-schedule" data-schedule-key="current">
+                            <strong>Escala Atual</strong>
+                            <div>Status: ${isCompleted ? 'Fechada' : 'Em andamento'}</div>
+                            <div>${dateRangeText}</div>
+                        </div>
+                    ` + schedulesHTML;
+                }
+                
+                if (schedulesHTML === '') {
+                    schedulesList.innerHTML = '<p class="no-schedules">Nenhuma escala encontrada para esta equipe.</p>';
+                } else {
+                    schedulesList.innerHTML = schedulesHTML;
+                    
+                    // Add event listeners to load schedules
+                    document.querySelectorAll('.schedule-item').forEach(item => {
+                        item.addEventListener('click', function() {
+                            const key = this.dataset.scheduleKey;
+                            if (key === 'current') {
+                                loadSchedule(currentSelectedTeam);
+                                alert("Carregando escala em andamento. Você pode continuar a seleção de dias.");
+                            } else {
+                                loadArchivedSchedule(currentSelectedTeam, key);
+                            }
+                            document.getElementById('savedSchedulesModal').style.display = 'none';
+                        });
+                    });
+                }
+            });
+        } else {
+            // Check if there's at least a current schedule
+            const currentScheduleRef = ref(database, `schedules/${currentSelectedTeam}`);
+            get(currentScheduleRef).then((currentSnapshot) => {
+                if (currentSnapshot.exists()) {
+                    schedulesList.innerHTML = `
+                        <div class="schedule-item" data-schedule-key="current">
+                            <strong>Escala Atual</strong>
+                            <div>Status: ${currentSnapshot.val().currentUserIndex >= currentTeamUsers.length ? 'Fechada' : 'Em andamento'}</div>
+                        </div>
+                    `;
+                    
+                    // Add event listener to load current schedule
+                    document.querySelector('[data-schedule-key="current"]').addEventListener('click', () => {
+                        loadSchedule(currentSelectedTeam);
+                        document.getElementById('savedSchedulesModal').style.display = 'none';
+                    });
+                } else {
+                    schedulesList.innerHTML = '<p class="no-schedules">Nenhuma escala encontrada para esta equipe.</p>';
+                }
+            });
+        }
+    }).catch((error) => {
+        console.error("Erro ao carregar escalas:", error);
+        schedulesList.innerHTML = `<p class="no-schedules">Erro ao carregar escalas: ${error.message}</p>`;
+    });
+}
+
+// Function to load archived schedule
+function loadArchivedSchedule(team, scheduleKey) {
+    if (!team || !scheduleKey) return;
+
+    try {
+        get(ref(database, `scheduleArchive/${team}/${scheduleKey}`)).then((snapshot) => {
+            if (snapshot.exists()) {
+                const savedData = snapshot.val();
+                console.log(`Escala arquivada ${scheduleKey} para ${team} encontrada. Tentando carregar...`, savedData);
+
+                // Reset the UI and load the archived schedule
+                resetScheduleUI();
+                
+                // Load the saved state
+                scheduleAssignments = savedData.assignments || {};
+                scheduleVacancies = savedData.vacancies || {};
+                selectedScaleDays = savedData.selectedDays || [];
+                currentUserIndex = savedData.currentUserIndex || 0;
+                
+                // Update max inputs if they were saved
+                if (savedData.maxWeekdays !== undefined) maxWeekdaysInput.value = savedData.maxWeekdays;
+                if (savedData.maxWeekends !== undefined) maxWeekdaysInput.value = savedData.maxWeekends;
+                
+                // Set expanded state from saved data
+                scheduleExpanded = savedData.expanded !== undefined ? savedData.expanded : true;
+                updateSectionVisibility();
+                
+                // Generate calendar to reflect selected days
+                if (savedData.selectedDays && savedData.selectedDays.length > 0) {
+                    // Set start/end dates based on the archived schedule
+                    startDateInput.value = savedData.selectedDays[0];
+                    endDateInput.value = savedData.selectedDays[savedData.selectedDays.length - 1];
+                }
+                generateCalendar();
+                
+                // Display the saved schedule
+                displaySavedSchedule();
+                highlightCurrentUser();
+                
+                // Update schedule info after loading saved data
+                updateScheduleInfo();
+                
+                alert(`Escala arquivada ${scheduleKey} carregada com sucesso em modo somente visualização.`);
+                
+                // Disable editing for archived schedules
+                disableScheduleClicks();
+                
+            } else {
+                console.log(`Escala arquivada ${scheduleKey} não encontrada para a equipe ${team}.`);
+                alert(`Escala arquivada não encontrada.`);
+            }
+        }).catch(error => {
+            console.error("Erro ao carregar escala arquivada:", error);
+            alert(`Erro ao carregar escala arquivada: ${error.message}`);
+        });
+    } catch (error) {
+        console.error("Erro ao carregar escala arquivada:", error);
+        alert(`Erro ao carregar escala arquivada: ${error.message}`);
+    }
+}
+
 // Event listeners
 startDateInput.addEventListener('change', generateCalendar);
 endDateInput.addEventListener('change', generateCalendar);
@@ -999,9 +1459,13 @@ useAutoScheduleCheckbox.addEventListener('change', function() {
     }
 });
 
+newScheduleButton.addEventListener('click', createNewSchedule);
+
 exceptionButton.addEventListener('click', openExceptionModal);
 closeModal.addEventListener('click', closeExceptionModal);
 applyExceptionButton.addEventListener('click', applyException);
+
+viewSavedSchedulesButton.addEventListener('click', viewSavedSchedules);
 
 // Close modal if user clicks outside the modal content
 window.addEventListener('click', (event) => {

@@ -163,6 +163,7 @@ h1, h2 {
     background-color: #f4f9ff;
     border-radius: 5px;
     border: 1px solid #d0e3ff;
+    gap: 10px;
 }
 
 .auto-schedule-toggle label {
@@ -175,6 +176,87 @@ h1, h2 {
     width: 20px;
     height: 20px;
     cursor: pointer;
+}
+
+.view-schedules-button {
+    background-color: #6a3de8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin-left: auto;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+}
+
+.view-schedules-button:hover {
+    background-color: #5730c5;
+}
+
+.saved-schedules-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.saved-schedules-content {
+    background-color: #fff;
+    margin: 10% auto;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 500px;
+}
+
+.saved-schedules-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.schedules-list {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.schedule-item {
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.schedule-item:hover {
+    background-color: #f5f5f5;
+}
+
+.schedule-item.current-schedule {
+    border-left: 4px solid #28a745;
+    background-color: #f8fff8;
+}
+
+.archive-date {
+    font-size: 0.8em;
+    color: #888;
+    margin-top: 4px;
+}
+
+.no-schedules {
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
 }
 
 .calendar-container {
@@ -240,6 +322,12 @@ h1, h2 {
 
 .day.selected {
     background-color: #28a745; 
+    color: white;
+    font-weight: bold;
+}
+
+.day.selected.holiday {
+    background-color: #dc3545; 
     color: white;
     font-weight: bold;
 }
@@ -352,6 +440,15 @@ h1, h2 {
 #generatedScheduleList li strong {
     color: #007bff; 
     margin-right: 5px;
+}
+
+#generatedScheduleList li.holiday-date {
+    border-left-color: #dc3545;
+    background-color: rgba(255, 220, 220, 0.3);
+}
+
+#generatedScheduleList li.holiday-date strong {
+    color: #dc3545;
 }
 
 .section-header {
@@ -470,6 +567,59 @@ h1, h2 {
     cursor: pointer;
     font-size: 16px;
     margin-top: 10px;
+}
+
+#newScheduleButton { 
+    background-color: #17a2b8; 
+    color: white;
+}
+
+#newScheduleButton:hover {
+    background-color: #138496; 
+}
+
+.add-to-home {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.add-to-home:hover {
+    transform: scale(1.1);
+}
+
+.add-to-home img {
+    width: 24px;
+    height: 24px;
+}
+
+.add-to-home-tooltip {
+    position: absolute;
+    right: 50px;
+    background-color: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.add-to-home:hover .add-to-home-tooltip {
+    opacity: 1;
 }
 
 @media screen and (min-width: 768px) {
